@@ -128,7 +128,7 @@ def generate_datasets(args) -> None:
 
 def main(args):
     parser = argparse.ArgumentParser(
-        description="This script is used to generate multi-robot synthetic datasets with range measurements from an existing g2o file."
+        description="This script is used to generate synthetic multi-robot datasets with range measurements from an existing g2o file."
     )
     parser.add_argument(
         "-d",
