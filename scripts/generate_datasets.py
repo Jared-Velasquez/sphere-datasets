@@ -31,8 +31,9 @@ NOISE_STDDEV = [0.10, 0.05]
 CUBE_RADIUS = 70.0
 TILTED_CUBE_RADIUS = 60.0
 CUBE_CENTER = (0.0681175550956, -1.0389495768684, -50.0233964188792)
+ORIGIN = (0, 0, 0)
 
-SENSING_HORIZON = 40.0
+SENSING_HORIZON = 50.0
 MEAS_PROB = 1.0
 
 def generate_datasets(args) -> None:
@@ -77,13 +78,15 @@ def generate_datasets(args) -> None:
                            [0.7071, 0.7071, 0.0],
                            [0.0, 0.0, 1.0]])
 
-        cube_coords = generate_cube_coords(radius, center)
+        cube_coords = generate_cube_coords(radius, ORIGIN)
         tilted_cube_coords = []
 
         # Convert each coord tuple into a np.ndarray and perform matrix rotation with rot_z
+        # First rotate, then translate to specified center
         for cube_coord in cube_coords:
             coord = np.asarray(cube_coord)
-            tilted_cube_coords.append(tuple(np.squeeze(np.asarray(rot_z @ coord))))
+            rot_coord = tuple(np.squeeze(np.asarray(rot_z @ coord)))
+            tilted_cube_coords.append(tuple(map(lambda x, y: x + y, center, rot_coord)))
         return tilted_cube_coords
 
     
@@ -121,7 +124,7 @@ def generate_datasets(args) -> None:
         save_to_pyfg_file(fg_mod, f"{case_dir}/{num_robots}_robots_{noise}_stddev_{len(cube_coords)}_landmarks.pyfg")
         fg_mod = add_landmarks_to_fg(fg_mod, tilted_cube_coords, range_model)
         save_to_pyfg_file(fg_mod, f"{case_dir}/{num_robots}_robots_{noise}_stddev_{len(cube_coords) + len(tilted_cube_coords)}_landmarks.pyfg")
-        save_robot_trajectories_to_tum_file(fg_mod, f"{case_dir}", use_ground_truth=False) # For visualization; saves case with 16 range measurements to TUM
+        # save_robot_trajectories_to_tum_file(fg_mod, f"{case_dir}", use_ground_truth=False) # For visualization; saves case with 16 range measurements to TUM
 
 def main(args):
     parser = argparse.ArgumentParser(
