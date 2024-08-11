@@ -14,5 +14,5 @@ Example:
 
 ```bash
 cd ~/sphere_datasets/scripts
-python3 generate_datasets.py --dataset ../data/sphere2500.g2o --output_dir ../output
+python3 generate_datasets.py --dataset ../data/sphere2500.g2o --output_dir ../output --sensing 50.0 --meas_prob 0.1
 ```
