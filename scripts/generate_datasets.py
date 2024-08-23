@@ -9,6 +9,7 @@ from evo.tools.plot import PlotMode, prepare_axis, traj
 from py_factor_graph.modifiers import (
     split_single_robot_into_multi,
     add_landmark_at_position,
+    add_inter_robot_range_measurements,
     RangeMeasurementModel
 )
 from py_factor_graph.io.g2o_file import parse_3d_g2o_file
@@ -20,7 +21,10 @@ from itertools import product
 from py_factor_graph.factor_graph import FactorGraphData
 
 ROBOT_CASES = [2, 4, 8]
-NOISE_STDDEV = [0.10]
+NOISE_STDDEV_CASES = [0.10]
+MEAS_PROB_CASES = [0.5, 1.0]
+
+DEFAULT_PYFG_FILENAME = "synthetic_dataset"
 
 CUBE_RADIUS = 50.0
 TILTED_CUBE_RADIUS = 50.0/math.sqrt(2)
@@ -36,7 +40,8 @@ def generate_datasets(args) -> None:
     data_fp = args.dataset
     output_dir = args.output_dir
     sensing_horizon = args.sensing
-    measurement_probability = args.meas_prob
+    inter_robot_sensing_horizon = args.inter_robot_sensing
+    add_robot_robot_range_measurements = args.inter_robot
     cube_radius = args.cube
     tilted_cube_radius = args.tilted_cube
 
@@ -104,6 +109,24 @@ def generate_datasets(args) -> None:
         for coord in coords:
             new_fg = add_landmark_at_position(new_fg, np.array(coord), range_model)
         return new_fg
+    
+    def name_pyfg_file(inter_robot_enabled: bool = False, num_robots: int = None, noise: float = None, num_landmarks: int = None) -> str:
+        name = ""
+        if inter_robot_enabled:
+            name += "inter_robot_"
+        if num_robots is not None:
+            name += f"{num_robots}_robots_"
+        if noise is not None:
+            name += f"{noise}_stddev_"
+        if num_landmarks is not None:
+            name += f"{num_landmarks}_landmarks"
+        if len(name) != 0 and name[-1] == "_":
+            name = name[:-1]
+        if len(name) == 0:
+            name = DEFAULT_PYFG_FILENAME
+        name += ".pyfg"
+
+        return name
 
     assert data_fp.endswith(".g2o"), logger.critical(
         "Dataset must be in g2o format."
@@ -115,29 +138,32 @@ def generate_datasets(args) -> None:
     fg = parse_3d_g2o_file(data_fp)
     # save_robot_trajectories_to_tum_file(fg, f"{output_dir}", use_ground_truth=False)
 
-    prod = product(ROBOT_CASES, NOISE_STDDEV)
+    prod = product(ROBOT_CASES, NOISE_STDDEV_CASES, MEAS_PROB_CASES)
     tilted_cube_coords = generate_tilted_cube_coords(TILTED_CUBE_RADIUS, ORIGIN)
     for i, tup in enumerate(prod):
-        num_robots, noise = tup
+        num_robots, noise, meas_prob = tup
         logger.info(f"Creating synthetic datasets for {num_robots} robots with noise stddev {noise}m")
-        range_model = RangeMeasurementModel(sensing_horizon, noise, measurement_probability)
+        range_model = RangeMeasurementModel(sensing_horizon, noise, meas_prob)
+        inter_robot_range_model = RangeMeasurementModel(inter_robot_sensing_horizon, noise, meas_prob)
 
-        case_dir = os.path.join(output_dir, f"{num_robots}_robots_{noise}_stddev")
+        case_dir = os.path.join(output_dir, name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise))
 
         if (not os.path.isdir(case_dir)):
             os.makedirs(case_dir)
 
         fg_mod = split_single_robot_into_multi(fg, num_robots)
-        save_to_pyfg_file(fg_mod, f"{case_dir}/{num_robots}_robots_{noise}_stddev.pyfg")
+        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}")
+        # if (add_robot_robot_range_measurements):
+        #     fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
+        #     save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise)}")
         if (cube_radius is not None):
             cube_coords = generate_cube_coords(cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, cube_coords, range_model)
-            save_to_pyfg_file(fg_mod, f"{case_dir}/{num_robots}_robots_{noise}_stddev_{fg_mod.num_landmarks}_landmarks.pyfg")
+            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
         if (tilted_cube_radius is not None):
             tilted_cube_coords = generate_tilted_cube_coords(tilted_cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, tilted_cube_coords, range_model)
-            save_to_pyfg_file(fg_mod, f"{case_dir}/{num_robots}_robots_{noise}_stddev_{fg_mod.num_landmarks}_landmarks.pyfg")
-        # save_robot_trajectories_to_tum_file(fg_mod, f"{case_dir}", use_ground_truth=True) # For visualization
+            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
 
 def main(args):
     parser = argparse.ArgumentParser(
@@ -162,14 +188,7 @@ def main(args):
         "--sensing",
         type=float,
         default=1.0,
-        help="sensing horizon for range measurements"
-    )
-    parser.add_argument(
-        "-m",
-        "--meas_prob",
-        type=float,
-        default=1.0,
-        help="probability of receiving a range measurement"
+        help="sensing horizon for robot-landmark range measurements"
     )
     parser.add_argument(
         "-c",
@@ -182,6 +201,19 @@ def main(args):
         "--tilted_cube",
         type=float,
         help="radius of a cube tilted 45 degrees ccw where each vertex is a landmark"
+    )
+    parser.add_argument(
+        "-i",
+        "--inter_robot",
+        action="store_true",
+        help="add inter-robot range measurements"
+    )
+    parser.add_argument(
+        "-r",
+        "--inter_robot_sensing",
+        type=float,
+        default=1.0,
+        help="sensing horizon for inter-robot range measurements"
     )
 
     args = parser.parse_args()
