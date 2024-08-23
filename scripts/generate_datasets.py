@@ -110,7 +110,7 @@ def generate_datasets(args) -> None:
             new_fg = add_landmark_at_position(new_fg, np.array(coord), range_model)
         return new_fg
     
-    def name_pyfg_file(inter_robot_enabled: bool = False, num_robots: int = None, noise: float = None, num_landmarks: int = None) -> str:
+    def name_pyfg_file(inter_robot_enabled: bool = False, num_robots: int = None, noise: float = None, meas_prob: float = None, num_landmarks: int = None, add_extension: bool = True) -> str:
         name = ""
         if inter_robot_enabled:
             name += "inter_robot_"
@@ -118,13 +118,16 @@ def generate_datasets(args) -> None:
             name += f"{num_robots}_robots_"
         if noise is not None:
             name += f"{noise}_stddev_"
+        if meas_prob is not None:
+            name += f"{meas_prob}_meas_prob_"
         if num_landmarks is not None:
-            name += f"{num_landmarks}_landmarks"
+            name += f"{num_landmarks}_landmarks_"
         if len(name) != 0 and name[-1] == "_":
             name = name[:-1]
         if len(name) == 0:
             name = DEFAULT_PYFG_FILENAME
-        name += ".pyfg"
+        if add_extension:
+            name += ".pyfg"
 
         return name
 
@@ -146,7 +149,7 @@ def generate_datasets(args) -> None:
         range_model = RangeMeasurementModel(sensing_horizon, noise, meas_prob)
         inter_robot_range_model = RangeMeasurementModel(inter_robot_sensing_horizon, noise, meas_prob)
 
-        case_dir = os.path.join(output_dir, name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise))
+        case_dir = os.path.join(output_dir, name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, add_extension = False))
 
         if (not os.path.isdir(case_dir)):
             os.makedirs(case_dir)
@@ -154,8 +157,8 @@ def generate_datasets(args) -> None:
         fg_mod = split_single_robot_into_multi(fg, num_robots)
         # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}")
         # if (add_robot_robot_range_measurements):
-        #     fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
-        #     save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise)}")
+        #      fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
+        #      save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise)}")
         if (cube_radius is not None):
             cube_coords = generate_cube_coords(cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, cube_coords, range_model)
