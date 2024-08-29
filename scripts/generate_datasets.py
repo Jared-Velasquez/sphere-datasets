@@ -31,8 +31,10 @@ TILTED_CUBE_RADIUS = 50.0/math.sqrt(2)
 
 SPHERE2500_SE_SYNC_COORDS_1 = [(-50, 50, -50), (50, -50, -50), (-50, -50, -50), (50, 50, -50), (-50, 50, 50), (50, -50, 50), (-50, -50, -50), (50, 50, 50)]
 SPHERE2500_SE_SYNC_COORDS_2 = [(-50, 0, -50), (0, -50, -50), (0, 50, -50), (50, 0, -50), (-50, 0, 50), (0, -50, 50), (0, 50, 50), (50, 0, 50)]
+SPHERE2500_SE_SYNC_SENSING_HORIZON = math.sqrt(50.0**2 + 50.0**2 + 50.0**2)
 SMALLGRID3D_SE_SYNC_COORDS_1 = [(-3, 3, -3), (3, -3, -3), (-3, -3, -3), (3, 3, -3), (-3, 3, 3), (3, -3, 3), (-3, -3, -3), (3, 3, 3)]
 SMALLGRID3D_SE_SYNC_COORDS_2 = [(-3, 0, -3), (0, -3, -3), (0, 3, -3), (3, 0, -3), (-3, 0, 3), (0, -3, 3), (0, 3, 3), (3, 0, 3)]
+SMALLGRID3D_SE_SYNC_SENSING_HORIZON = math.sqrt(3.0**2 + 3.0**2 + 3.0**2)
 
 ORIGIN = (0, 0, 0)
 
@@ -120,7 +122,7 @@ def generate_datasets(args) -> None:
             name += f"{noise}_stddev_"
         if meas_prob is not None:
             name += f"{meas_prob}_meas_prob_"
-        if num_landmarks is not None:
+        if num_landmarks is not None and num_landmarks > 0:
             name += f"{num_landmarks}_landmarks_"
         if len(name) != 0 and name[-1] == "_":
             name = name[:-1]
@@ -145,7 +147,7 @@ def generate_datasets(args) -> None:
     tilted_cube_coords = generate_tilted_cube_coords(TILTED_CUBE_RADIUS, ORIGIN)
     for i, tup in enumerate(prod):
         num_robots, noise, meas_prob = tup
-        logger.info(f"Creating synthetic datasets for {num_robots} robots with noise stddev {noise}m")
+        logger.info(f"Creating synthetic datasets for {num_robots} robots with noise stddev {noise}m and measurement probability {meas_prob}")
         range_model = RangeMeasurementModel(sensing_horizon, noise, meas_prob)
         inter_robot_range_model = RangeMeasurementModel(inter_robot_sensing_horizon, noise, meas_prob)
 
@@ -155,10 +157,10 @@ def generate_datasets(args) -> None:
             os.makedirs(case_dir)
 
         fg_mod = split_single_robot_into_multi(fg, num_robots)
-        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}")
-        # if (add_robot_robot_range_measurements):
-        #      fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
-        #      save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise)}")
+        save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}")
+        if (add_robot_robot_range_measurements):
+            fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
+            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
         if (cube_radius is not None):
             cube_coords = generate_cube_coords(cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, cube_coords, range_model)
@@ -167,6 +169,25 @@ def generate_datasets(args) -> None:
             tilted_cube_coords = generate_tilted_cube_coords(tilted_cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, tilted_cube_coords, range_model)
             save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
+        
+        
+        # sphere2500_se_synch datasets
+        # range_model = RangeMeasurementModel(SPHERE2500_SE_SYNC_SENSING_HORIZON, noise, meas_prob)
+        # inter_robot_range_model = RangeMeasurementModel(SPHERE2500_SE_SYNC_SENSING_HORIZON, noise, meas_prob)
+        # fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
+        # fg_mod = add_landmarks_to_fg(fg_mod, SPHERE2500_SE_SYNC_COORDS_1, range_model)
+        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
+        # fg_mod = add_landmarks_to_fg(fg_mod, SPHERE2500_SE_SYNC_COORDS_1, range_model)
+        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
+
+        # smallGrid3D_se_synch datasets
+        # range_model = RangeMeasurementModel(SMALLGRID3D_SE_SYNC_SENSING_HORIZON, noise, meas_prob)
+        # inter_robot_range_model = RangeMeasurementModel(SMALLGRID3D_SE_SYNC_SENSING_HORIZON, noise, meas_prob)
+        # fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
+        # fg_mod = add_landmarks_to_fg(fg_mod, SMALLGRID3D_SE_SYNC_COORDS_1, range_model)
+        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
+        # fg_mod = add_landmarks_to_fg(fg_mod, SMALLGRID3D_SE_SYNC_COORDS_2, range_model)
+        # save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, fg_mod.num_landmarks)}")
 
 def main(args):
     parser = argparse.ArgumentParser(
