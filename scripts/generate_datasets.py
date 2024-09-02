@@ -5,7 +5,7 @@ import os
 import argparse
 import math
 import sys
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 import numpy as np
 from utils.modifiers import add_landmarks_to_fg
 from utils.name_utils import name_pyfg_file
@@ -20,8 +20,9 @@ from py_factor_graph.modifiers import (
     RangeMeasurementModel
 )
 from py_factor_graph.io.g2o_file import parse_3d_g2o_file
-from py_factor_graph.io.pyfg_file import save_to_pyfg_file
+from py_factor_graph.io.pyfg_file import save_to_pyfg_file, read_from_pyfg_file
 from py_factor_graph.io.tum_file import save_robot_trajectories_to_tum_file
+from py_factor_graph.utils.name_utils import get_robot_char_from_number, get_robot_idx_from_char
 from py_factor_graph.utils.logging_utils import logger
 from itertools import product
 
@@ -116,7 +117,7 @@ def generate_smallgrid3d_se_sync_datasets(args) -> None:
         fg_mod = add_landmarks_to_fg(fg_mod, SMALLGRID3D_SE_SYNC_COORDS_2, range_model)
         save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(True, num_robots, noise, meas_prob, fg_mod.num_landmarks)}")
 
-def generate_datasets(args) -> None:
+def generate_datasets(args) -> List[str]:
     data_fp = args.dataset
     output_dir = args.output_dir
     sensing_horizon = args.sensing
@@ -137,6 +138,8 @@ def generate_datasets(args) -> None:
 
     prod = product(ROBOT_CASES, NOISE_STDDEV_CASES, MEAS_PROB_CASES)
     tilted_cube_coords = generate_tilted_cube_coords(TILTED_CUBE_RADIUS, ORIGIN)
+
+    synthetic_dataset_filepaths: List[str] = []
     for i, tup in enumerate(prod):
         num_robots, noise, meas_prob = tup
         logger.info(f"Creating synthetic datasets for {num_robots} robots with noise stddev {noise}m and measurement probability {meas_prob}")
@@ -149,18 +152,90 @@ def generate_datasets(args) -> None:
             os.makedirs(case_dir)
 
         fg_mod = split_single_robot_into_multi(fg, num_robots)
-        save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}")
+        multi_robot_filepath = f"{case_dir}/{name_pyfg_file(False, num_robots, noise)}"
+        save_to_pyfg_file(fg_mod, multi_robot_filepath)
+        synthetic_dataset_filepaths.append(multi_robot_filepath)
+
+        # Add inter-robot range measurements
         if (add_robot_robot_range_measurements):
             fg_mod = add_inter_robot_range_measurements(fg_mod, inter_robot_range_model)
-            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, fg_mod.num_landmarks)}")
+            inter_robot_filepath = f"{case_dir}/{name_pyfg_file(True, num_robots, noise, meas_prob, fg_mod.num_landmarks)}"
+            save_to_pyfg_file(fg_mod, inter_robot_filepath)
+            synthetic_dataset_filepaths.append(inter_robot_filepath)
+
+        # Add landmarks
         if (cube_radius is not None):
             cube_coords = generate_cube_coords(cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, cube_coords, range_model)
-            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, fg_mod.num_landmarks)}")
+            cube_filepath = f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, fg_mod.num_landmarks)}"
+            save_to_pyfg_file(fg_mod, cube_filepath)
+            synthetic_dataset_filepaths.append(cube_filepath)
+
         if (tilted_cube_radius is not None):
             tilted_cube_coords = generate_tilted_cube_coords(tilted_cube_radius, ORIGIN)
             fg_mod = add_landmarks_to_fg(fg_mod, tilted_cube_coords, range_model)
-            save_to_pyfg_file(fg_mod, f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, fg_mod.num_landmarks)}")
+            tilted_cube_filepath = f"{case_dir}/{name_pyfg_file(add_robot_robot_range_measurements, num_robots, noise, meas_prob, fg_mod.num_landmarks)}"
+            save_to_pyfg_file(fg_mod, tilted_cube_filepath)
+            synthetic_dataset_filepaths.append(tilted_cube_filepath)
+    
+    return synthetic_dataset_filepaths
+
+def landmark_connectivity(synthetic_dataset_filepaths) -> None:
+
+    def append_frequency_to_csv(frequency: Dict[str, List[int]], num_robots: int, csv_fp: str) -> None:
+        """Append the frequency of each robot seeing each landmark to a CSV file.
+
+        Args:
+            frequency (Dict[str, List[int]]): frequency of each robot seeing each landmark
+            csv_fp (str): filepath to save the CSV file
+
+        Returns:
+            None
+        """
+        with open(csv_fp, "w") as f:
+            f.write("landmark_symbol")
+            for i in range(num_robots):
+                f.write(f",{get_robot_char_from_number(i)}_count")
+            f.write("\n")
+
+            for landmark, freq in frequency.items():
+                f.write(landmark)
+                for count in freq:
+                    f.write(f",{count}")
+                f.write("\n")
+
+    for synthetic_dataset_filepath in synthetic_dataset_filepaths:
+        fg = read_from_pyfg_file(synthetic_dataset_filepath)
+
+        if (fg.num_landmarks == 0):
+            continue
+        robot_landmark_frequency = {}
+
+        logger.info(f"Counting frequency of connectivity between robots and landmarks in {synthetic_dataset_filepath}")
+
+        # For each landmark, initialize array where each element corresponds to the frequency of a robot seeing a landmark
+        for i in range(fg.num_landmarks):
+            landmark = f"L{i}"
+            robot_landmark_frequency[landmark] = [0] * fg.num_robots
+
+        range_measurements = fg.range_measurements
+        for measure in range_measurements:
+            # Skip over inter-robot range measurements
+            if measure.association[1][0] != "L":
+                continue
+
+            landmark = measure.association[1]
+            robot = measure.association[0]
+
+            robot_idx = get_robot_idx_from_char(robot[0])
+            robot_landmark_frequency[landmark][robot_idx] += 1
+
+        # Save the frequency of each robot seeing each landmark to a CSV file
+        base = os.path.basename(synthetic_dataset_filepath)
+        output_dir = os.path.dirname(synthetic_dataset_filepath)
+        frequency_csv_file = os.path.join(output_dir, f"{os.path.splitext(base)[0]}_landmark_connectivity.csv")
+
+        append_frequency_to_csv(robot_landmark_frequency, fg.num_robots, frequency_csv_file)
 
 def main(args):
     parser = argparse.ArgumentParser(
@@ -212,9 +287,15 @@ def main(args):
         default=1.0,
         help="sensing horizon for inter-robot range measurements"
     )
+    parser.add_argument(
+        "--reindex",
+        action="store_true",
+        help="assign ownership of landmarks to the robot that has the highest frequency of seeing the landmark",
+    )
 
     args = parser.parse_args()
-    generate_datasets(args)
+    synthetic_dataset_filepaths = generate_datasets(args)
+    landmark_connectivity(synthetic_dataset_filepaths)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
